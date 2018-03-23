@@ -34,7 +34,6 @@ class BaiduDoc(QWidget):
         buttons = QDialogButtonBox(QDialogButtonBox.SaveAll | QDialogButtonBox.Cancel, self)
         buttons.accepted.connect(lambda: self.download_swfs(input_links.toPlainText().split('\n')))
         buttons.rejected.connect(qApp.quit)
-        self.download_swfs()
         layout = QVBoxLayout()
         layout.addWidget(input_links)
         layout.addWidget(buttons)
