@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import shutil
 import signal
 import sys
 from enum import Enum
@@ -23,37 +24,63 @@ class BaiduDoc(QWidget):
         self.outdir = QDir(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
         self.procs = Munch(download=None, render=None, convert=None)
         self.work_folders = []
-        self.setWindowTitle('Baidu Doc Grabber')
+        self.setWindowTitle('Baidu Docs Grabber')
         self.setWindowIcon(QIcon(self.get_path('icon.png')))
-        input_links = QTextEdit(self)
-        input_links.setFontFamily('Microsoft YaHei')
-        input_links.setPlaceholderText('copy & paste one or more Baidu Docs page links here')
-        input_links.setWordWrapMode(QTextOption.NoWrap)
-        input_links.setTextInteractionFlags(Qt.TextEditorInteraction)
-        input_links.ensureCursorVisible()
-        buttons = QDialogButtonBox(QDialogButtonBox.SaveAll | QDialogButtonBox.Cancel, self)
-        buttons.accepted.connect(lambda: self.download_swfs(input_links.toPlainText().split('\n')))
-        buttons.rejected.connect(qApp.quit)
+        self.input_links = QTextEdit(self)
+        self.input_links.setStyleSheet('''QTextEdit {
+            background: #FFF url(watermark.png) no-repeat center center;
+            font-family: "Microsoft YaHei", sans-serif;
+            font-size: 10pt;
+        }''')
+        self.input_links.setAcceptRichText(False)
+        self.input_links.setPlaceholderText('copy & paste one or more Baidu Docs page links here')
+        self.input_links.setWordWrapMode(QTextOption.NoWrap)
+        self.input_links.setTextInteractionFlags(Qt.TextEditorInteraction)
+        self.input_links.ensureCursorVisible()
+        self.input_links.setAutoFormatting(QTextEdit.AutoNone)
+        self.input_buttons = QDialogButtonBox(QDialogButtonBox.SaveAll | QDialogButtonBox.Reset, self)
+        self.input_buttons.clicked.connect(self.handle_actions)
+        logolabel = QLabel('<img src="logo.png" />')
+        bottomlayout = QHBoxLayout()
+        bottomlayout.setContentsMargins(0, 0, 0, 0)
+        bottomlayout.addWidget(logolabel)
+        bottomlayout.addStretch(1)
+        bottomlayout.addWidget(self.input_buttons)
         layout = QVBoxLayout()
-        layout.addWidget(input_links)
-        layout.addWidget(buttons)
+        layout.setContentsMargins(10, 10, 10, 8)
+        layout.addWidget(self.input_links)
+        layout.addLayout(bottomlayout)
         self.setLayout(layout)
-        self.setMinimumSize(600, 500)
+        self.setMinimumSize(600, 400)
 
-    @pyqtSlot(list)
+    @pyqtSlot(QAbstractButton)
+    def handle_actions(self, button: QAbstractButton):
+        if self.input_buttons.buttonRole(button) == QDialogButtonBox.AcceptRole:
+            self.format_links()
+        elif self.input_buttons.buttonRole(button) == QDialogButtonBox.ResetRole:
+            self.input_links.clear()
+
+    @pyqtSlot()
+    def format_links(self):
+        links = self.input_links.toPlainText().split('\n')
+        links = [x for x in links if x.strip()]
+        if len(links):
+            self.download_swfs(links)
+
     def download_swfs(self, urls: list):
-        savepath, _ = QFileDialog.getExistingDirectory(self, "Select a folder for the PDFs...",
-                                                       self.outdir.absolutePath())
+        if not len(urls):
+            return
+        savepath = QFileDialog.getExistingDirectory(self, 'Select a folder for the PDFs...', self.outdir.absolutePath())
         if savepath:
             self.outdir = QDir(savepath)
             for url in urls:
                 index = urls.index(url)
                 swf_link = QUrl.fromUserInput(url)
                 if swf_link.isValid():
-                    self.work_folders.append(self.get_path('{0:03}'.format(index)))
+                    self.work_folders.append(os.path.join(self.outdir.absolutePath(), '{0:03}'.format(index)))
                     os.makedirs(self.work_folders[index], exist_ok=True)
                     cmd = '{0} {1}'.format(Tools.DOWNLOAD.value, url)
-                    self.procs.download = BaiduDoc.init_proc(cmd, True, self.check_downloads, self.work_folders[index])
+                    self.procs.download = self.init_proc(cmd, True, self.check_downloads, self.work_folders[index])
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def check_downloads(self, code: int, status: QProcess.ExitStatus):
@@ -66,7 +93,7 @@ class BaiduDoc(QWidget):
     def publish_pdf(self, path: QDir):
         for swf in path.entryList('*.swf'):
             cmd = '{0} -r 240 {2} -o {3]'.format(Tools.RENDER.value, swf, swf.replace('.swf', '.png'))
-            self.procs.render = BaiduDoc.init_proc(cmd, True, self.convert, path)
+            self.procs.render = self.init_proc(cmd, True, self.convert, path.absolutePath())
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def convert(self, code: int, status: QProcess.ExitStatus):
@@ -78,11 +105,12 @@ class BaiduDoc(QWidget):
                 cmd = '{0} -adjoin {1} {2}'.format(Tools.CONVERT.value,
                                                    '{}/*.png'.format(path.absolutePath()),
                                                    '{0}/{1}.pdf'.format(self.outdir.absolutePath(), path.dirName()))
-                self.procs.convert = BaiduDoc.init_proc(cmd, True, self.complete, path)
+                self.procs.convert = self.init_proc(cmd, True, self.complete, path.absolutePath())
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def complete(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
+            self.cleanup()
             btn = QMessageBox.information(self,
                                           'Processing complete',
                                           'Your documents are finally ready!<br><br>Click the OPEN  button below to '
@@ -107,12 +135,15 @@ class BaiduDoc(QWidget):
         else:
             return prepath
 
-    @staticmethod
-    def init_proc(cmd: str, autostart: bool, finish: pyqtSlot, workpath: QDir):
-        p = QProcess()
+    def init_proc(self, cmd: str, autostart: bool, finish: pyqtSlot, workpath: str):
+        if not os.path.exists(workpath):
+            self.handle_error('Invalid work path', 'An invalid working path was passed to QProcess:\n\n{}'
+                              .format(workpath))
+            return
+        p = QProcess(self)
         p.setProcessEnvironment(QProcessEnvironment.systemEnvironment())
         p.setProcessChannelMode(QProcess.MergedChannels)
-        p.setWorkingDirectory(workpath.absolutePath())
+        p.setWorkingDirectory(workpath)
         if cmd is not None:
             p.setProgram(cmd)
         if finish is not None:
@@ -123,7 +154,8 @@ class BaiduDoc(QWidget):
 
     @pyqtSlot()
     def cleanup(self):
-        pass
+        [shutil.rmtree(folder) for folder in self.work_folders]
+        self.work_folders.clear()
 
 
 class Tools(Enum):
@@ -134,6 +166,7 @@ class Tools(Enum):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyle('Fusion')
     baidu = BaiduDoc()
     baidu.show()
     app.setApplicationName('BaiduGrabber')
