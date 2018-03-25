@@ -107,4 +107,5 @@ venv.bak/
 
 workspace/*
 !/workspace/.keep
-/bin/linux/
+bin/linux/*
+!/bin/linux/.keep
