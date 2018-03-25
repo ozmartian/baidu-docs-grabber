@@ -159,14 +159,15 @@ class BaiduDoc(QWidget):
 
 
 class Tools(Enum):
-    DOWNLOAD = BaiduDoc.get_path('bin/dl-baidu-swf{}'.format('.exe' if sys.platform == 'win32' else ''))
-    RENDER = BaiduDoc.get_path('bin/swfrender{}'.format('.exe' if sys.platform == 'win32' else ''))
-    CONVERT = BaiduDoc.get_path('bin/convert{}'.format('.exe' if sys.platform == 'win32' else ''))
+    DOWNLOAD = BaiduDoc.get_path('bin/{0}/dl-baidu-swf{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
+    RENDER = BaiduDoc.get_path('bin/{0}/swfrender{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
+    CONVERT = BaiduDoc.get_path('bin/{0}/convert{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
 
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyle('Fusion')
+    if not sys.platform.startswith('linux'):
+    	app.setStyle('Fusion')
     baidu = BaiduDoc()
     baidu.show()
     app.setApplicationName('BaiduGrabber')
