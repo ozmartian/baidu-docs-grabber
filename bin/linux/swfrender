@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ls *.swf | xargs -I{} $(which swfrender) -r 240 "{}" -o "{}.png"

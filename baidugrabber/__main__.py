@@ -43,8 +43,8 @@ signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 
 class BaiduDoc(QWidget):
-    def __init__(self):
-        super(BaiduDoc, self).__init__()
+    def __init__(self, parent=None):
+        super(BaiduDoc, self).__init__(parent)
         self.workspace, self.filename = None, None
         self.urlcount, self.completecount = 0, 0
         self.overlay, self.progress, self.progresslabel = None, None, None
@@ -110,8 +110,8 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             self.download_swfs(links)
 
     def download_swfs(self, urls: list):
-        self.urlcount = len(urls)
-        if not self.urlcount:
+        self.completecount = 0
+        if not len(urls):
             return
         savepath = QFileDialog.getExistingDirectory(self, 'Select a folder to save your documents',
                                                     self.outdir.absolutePath())
@@ -122,18 +122,21 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                 index = urls.index(url)
                 swf_link = QUrl.fromUserInput(url)
                 if swf_link.isValid():
-                    self.work_folders.append(os.path.join(self.outdir.absolutePath(), '{0:03}'.format(index)))
+                    self.work_folders.append(os.path.join(self.outdir.absolutePath(), '{0:03}'.format(index + 1)))
                     os.makedirs(self.work_folders[index], exist_ok=True)
                     cmd = '{0} {1}'.format(Tools.DOWNLOAD.value, url)
-                    self.procs.download.append(self.init_proc(cmd, self.work_folders[index], self.monitor_downloads))
+                    self.procs.download.append(self.run_cmd(cmd, self.work_folders[index], self.monitor_downloads))
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def monitor_downloads(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
-            self.completecount += 1
-            self.sender().close()
-            if self.completecount == self.urlcount:
-                self.completecount == 0
+            completed = 0
+            for proc in self.procs.download:
+                if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
+                    proc.close()
+                    completed += 1
+            if completed == len(self.procs.download):
+                self.procs.download.clear()
                 self.render_pngs()
 
     def render_pngs(self):
@@ -142,33 +145,39 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             if sys.platform == 'win32':
                 cmd = 'for /r %v in (*.swf) do {} -r 240 "%v" -o "%v.png"'.format(Tools.RENDER.value)
             else:
-                cmd = 'ls *.swf | xargs -I{{}} {} -r 240 "{{}}" -o "{{}}.png"'.format(Tools.RENDER.value)
-            self.procs.render.append(self.init_proc(cmd, folder, self.convert))
+                cmd = Tools.RENDER.value
+            self.procs.render.append(self.run_cmd(cmd, folder, self.convert))
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def monitor_render(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
-            self.completecount += 1
-            self.sender().close()
-            if self.completecount == len(self.work_folders):
-                self.completecount = 0
+            completed = 0
+            for proc in self.procs.render:
+                if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
+                    proc.close()
+                    completed += 1
+            if completed == len(self.procs.render):
+                self.procs.render.clear()
                 self.convert()
 
-    @pyqtSlot(int, QProcess.ExitStatus)
-    def convert(self, code: int, status: QProcess.ExitStatus):
+    def convert(self):
         self.update_progress('Merging pages into PDF documents...', 3)
         for folder in self.work_folders:
             filename = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
             cmd = '{0} -adjoin *.png {1}'.format(Tools.CONVERT.value, filename)
-            self.procs.convert.append(self.init_proc(cmd, folder, self.complete))
+            self.procs.convert.append(self.run_cmd(cmd, folder, self.complete))
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def complete(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
-            self.completecount += 1
-            self.sender().close()
-            if self.completecount == len(self.work_folders):
+            completed = 0
+            for proc in self.procs.convert:
+                if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
+                    proc.close()
+                    completed += 1
+            if completed == len(self.procs.convert):
                 self.update_progress('Complete... Your documents are ready!', 4)
+                self.procs.convert.clear()
                 self.cleanup()
 
     def show_progress(self, msg: str):
@@ -186,6 +195,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             font-weight: bold;
             font-size: 11pt;
             text-align: center;
+            color: #000;
         }''')
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 10, 20, 10)
@@ -193,12 +203,12 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         layout.addWidget(self.progresslabel)
         layout.addWidget(self.progress)
         layout.addStretch(1)
-        self.overlay = QWidget(self, Qt.Popup)
-        self.overlay.setGeometry(self.geometry())
-        self.overlay.setStyleSheet('background-color: #FFF;')
-        self.overlay.setWindowOpacity(0.6)
+        self.overlay = QWidget(self)
+        self.overlay.setObjectName('ov')
+        self.overlay.setStyleSheet('QWidget#ov { border-image: url(:images/overlay.png) 0 0 0 0 stretch stretch; }')
         self.overlay.setLayout(layout)
         self.stackedlayout.addWidget(self.overlay)
+        self.stackedlayout.setCurrentWidget(self.overlay)
 
     def update_progress(self, msg: str, step: int):
         self.progress.setValue(step)
@@ -240,7 +250,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         else:
             return prepath
 
-    def init_proc(self, cmd: str, workpath: str, finish: pyqtSlot = None):
+    def run_cmd(self, cmd: str, workpath: str, finish: pyqtSlot = None):
         if not os.path.exists(workpath):
             self.handle_error('Invalid work path', 'An invalid working path was passed to QProcess:\n\n{}'
                               .format(workpath))
@@ -256,6 +266,10 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
 
     @pyqtSlot()
     def cleanup(self):
+        # [proc.close() for proc in self.procs if type(proc) is QProcess]
+        self.procs.download.clear()
+        self.procs.render.clear()
+        self.procs.convert.clear()
         [shutil.rmtree(folder) for folder in self.work_folders]
         self.work_folders.clear()
 
