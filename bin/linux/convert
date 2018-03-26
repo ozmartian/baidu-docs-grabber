@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ls *.png | xargs -I{} $(which convert) "{}" -o "{}.jpg"

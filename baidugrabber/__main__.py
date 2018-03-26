@@ -50,7 +50,7 @@ class BaiduDoc(QWidget):
         self.overlay, self.progress, self.progresslabel = None, None, None
         self.outdir = QDir(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
         self.openbutton, self.continuebutton = None, None
-        self.procs = Munch(download=[], render=[], convert=[])
+        self.procs = Munch(download=[], render=[], convert=[], merge=[])
         self.work_folders = []
         self.setWindowTitle('Baidu Docs Grabber')
         qApp.setWindowIcon(QIcon(':images/icon.png'))
@@ -140,7 +140,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                 self.render_pngs()
 
     def render_pngs(self):
-        self.update_progress('Converting pages to PNG images...', 2)
+        self.update_progress('Rendering pages to image files...', 2)
         for folder in self.work_folders:
             if sys.platform == 'win32':
                 cmd = 'for /r %v in (*.swf) do {} -r 240 "%v" -o "%v.png"'.format(Tools.RENDER.value)
@@ -161,14 +161,16 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                 self.convert()
 
     def convert(self):
-        self.update_progress('Merging pages into PDF documents...', 3)
+        self.update_progress('Converting images to JPG format...', 3)
         for folder in self.work_folders:
-            filename = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
-            cmd = '{0} -adjoin *.png {1}'.format(Tools.CONVERT.value, filename)
+            if sys.platform == 'win32':
+                cmd = 'for /r %v in (*.png) do {} "%v" "%v.jpg"'.format(Tools.CONVERT.value)
+            else:
+                cmd = Tools.CONVERT.value
             self.procs.convert.append(self.run_cmd(cmd, folder, self.complete))
 
     @pyqtSlot(int, QProcess.ExitStatus)
-    def complete(self, code: int, status: QProcess.ExitStatus):
+    def monitor_convert(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
             completed = 0
             for proc in self.procs.convert:
@@ -176,8 +178,28 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                     proc.close()
                     completed += 1
             if completed == len(self.procs.convert):
-                self.update_progress('Complete... Your documents are ready!', 4)
                 self.procs.convert.clear()
+                self.merge()
+
+    def merge(self):
+        self.update_progress('Merging images into PDF documents...', 4)
+        for folder in self.work_folders:
+            filename = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
+            jpgs = ' '.join(QDir(folder).entryList(['*.jpg']))
+            cmd = '{0} -o {1} {2}'.format(Tools.MERGE.value, filename, jpgs)
+            self.procs.merge.append(self.run_cmd(cmd, folder, self.complete))
+
+    @pyqtSlot(int, QProcess.ExitStatus)
+    def complete(self, code: int, status: QProcess.ExitStatus):
+        if code == 0 and status == QProcess.NormalExit:
+            completed = 0
+            for proc in self.procs.merge:
+                if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
+                    proc.close()
+                    completed += 1
+            if completed == len(self.procs.merge):
+                self.update_progress('Complete... Your documents are ready!', 5)
+                self.procs.merge.clear()
                 self.cleanup()
 
     def show_progress(self, msg: str):
@@ -185,7 +207,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.progress.setStyle(QStyleFactory.create('Fusion'))
         self.progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.progress.setTextVisible(True)
-        self.progress.setRange(0, 4)
+        self.progress.setRange(0, 5)
         self.progress.setValue(1)
         self.progresslabel = QLabel(msg, self)
         self.progresslabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
@@ -270,6 +292,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.procs.download.clear()
         self.procs.render.clear()
         self.procs.convert.clear()
+        self.procs.merge.clear()
         [shutil.rmtree(folder) for folder in self.work_folders]
         self.work_folders.clear()
 
@@ -280,6 +303,8 @@ class Tools(Enum):
     RENDER = BaiduDoc.get_path('bin/{0}/swfrender{1}'
                                .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
     CONVERT = BaiduDoc.get_path('bin/{0}/convert{1}'
+                                .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
+    MERGE = BaiduDoc.get_path('bin/{0}/img2pdf{1}'
                                 .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
 
 
