@@ -1,6 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+#######################################################################
+#
+# baidu-grabber - convert and save Baidu Docs to PDF
+#
+# copyright © 2018 Pete Alexandrou
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#######################################################################
+
 import os
 import shutil
 import signal
@@ -12,7 +33,9 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from munch import Munch
+import baidugrabber
+from baidugrabber import resources
+from baidugrabber.munch import Munch
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 signal.signal(signal.SIGTERM, signal.SIG_DFL)
@@ -24,30 +47,33 @@ class BaiduDoc(QWidget):
         self.workspace, self.filename = None, None
         self.urlcount, self.swfcount, self.completecount = 0, [], 0
         self.overlay, self.progress, self.progresslabel = None, None, None
-        # self.outdir = QDir(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+        self.outdir = QDir(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
         self.buttonwidget = QWidget(self)
         self.buttonwidget.setVisible(False)
-        self.openbutton, self.continuebutton = QPushButton('Open Folder', self), QPushButton('Continue', self)
-        self.outdir = QDir('/home/ozmartian/Temp/_docs')
+        self.openbutton, self.continuebutton = None, None
         self.procs = Munch(download=[], render=[], convert=[])
         self.work_folders = []
         self.setWindowTitle('Baidu Docs Grabber')
-        self.setWindowIcon(QIcon(self.get_path('images/icon.png')))
+        self.setWindowIcon(QIcon(self.get_path(':images/icon.png')))
         self.input_links = QTextEdit(self)
         self.input_links.setStyleSheet('''QTextEdit {
-            background: #FFF url(images/watermark.png) no-repeat center center;
+            background: #FFF url(:images/watermark.png) no-repeat center center;
             font-family: "Microsoft YaHei", sans-serif;
             font-size: 10pt;
+            color: #000;
         }''')
         self.input_links.setAcceptRichText(False)
-        self.input_links.setPlaceholderText('copy & paste one or more Baidu Docs page links here')
+        placeholder = 'copy & paste one or more Baidu Docs page links here\n\nexample:\n\n' \
+                      'https://wenku.baidu.com/view/44a0c50aba1aa8114431d979.html\n' \
+                      'https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html'
+        self.input_links.setPlaceholderText(placeholder)
         self.input_links.setWordWrapMode(QTextOption.NoWrap)
         self.input_links.setTextInteractionFlags(Qt.TextEditorInteraction)
         self.input_links.ensureCursorVisible()
         self.input_links.setAutoFormatting(QTextEdit.AutoNone)
         self.input_buttons = QDialogButtonBox(QDialogButtonBox.SaveAll | QDialogButtonBox.Reset, self)
         self.input_buttons.clicked.connect(self.handle_actions)
-        logolabel = QLabel('<img src="images/logo.png" />')
+        logolabel = QLabel('<img src=":images/logo.png" />', self)
         bottomlayout = QHBoxLayout()
         bottomlayout.setContentsMargins(0, 0, 0, 0)
         bottomlayout.addWidget(logolabel)
@@ -60,6 +86,7 @@ class BaiduDoc(QWidget):
         self.setLayout(layout)
         self.setMinimumSize(600, 400)
         # FOR TESTING
+        self.outdir = QDir('C:/Temp/_DOCS' if sys.platform == 'win32' else '/home/ozmartian/Temp/_docs')
         self.input_links.setText('''https://wenku.baidu.com/view/7d31c296dd88d0d233d46ad8.html?sxts=1521450475781
 https://wenku.baidu.com/view/44a0c50aba1aa8114431d979.html?from=search
 https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
@@ -100,6 +127,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
     def monitor_downloads(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
             self.completecount += 1
+            self.sender().close()
             if self.completecount == self.urlcount:
                 self.render_pngs()
 
@@ -109,7 +137,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             swfs = QDir(folder).entryList(['*.swf'])
             self.swfcount.append({'folder': folder, 'total': len(swfs), 'complete': 0})
             for swf in swfs:
-                cmd = '{0} -r 240 {2} -o {3]'.format(Tools.RENDER.value, swf, swf.replace('.swf', '.png'))
+                cmd = '{0} -r 240 {1} -o {2}'.format(Tools.RENDER.value, swf, swf.replace('.swf', '.png'))
                 self.procs.render.append(self.init_proc(cmd, folder, self.convert))
 
     @pyqtSlot(int, QProcess.ExitStatus)
@@ -118,6 +146,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             folderswfs = [x for x in self.swfcount if x['folder'] == self.sender().workingDirectory()][0]
             folderswfs['complete'] += 1
             completed = [x for x in self.swfcount if x['complete'] == x['total']]
+            self.sender().close()
             if len(completed) == len(self.swfcount):
                 self.update_progress('Merging pages into PDF documents...', 3)
                 self.completecount = 0
@@ -130,6 +159,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
     def complete(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
             self.completecount += 1
+            self.sender().close()
             if self.completecount == len(self.work_folders):
                 self.update_progress('Processing complete...', 4)
                 self.buttonwidget.setVisible(True)
@@ -146,15 +176,17 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.progress.setRange(0, 4)
         self.progress.setValue(1)
         self.progresslabel = QLabel(msg, self)
+        self.progresslabel.setAlignment(Qt.AlignHCenter)
         self.progresslabel.setStyleSheet('''
         QLabel {
             font-weight: bold;
             font-size: 11pt;
             text-align: center;
-            color: #222;
         }''')
+        self.openbutton = QPushButton('Open Folder', self)
         self.openbutton.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.outdir.absolutePath())))
+        self.continuebutton = QPushButton('Continue', self)
         self.continuebutton.clicked.connect(self.close_progress)
         buttonlayout = QHBoxLayout()
         buttonlayout.addStretch(1)
@@ -165,7 +197,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.buttonwidget.setVisible(False)
         layout = QVBoxLayout()
         layout.addStretch(1)
-        layout.addWidget(self.progresslabel, Qt.AlignHCenter)
+        layout.addWidget(self.progresslabel)
         layout.addWidget(self.progress)
         layout.addWidget(self.buttonwidget)
         layout.addStretch(1)
@@ -180,6 +212,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.progresslabel.setText(msg)
         if self.progress.value() == self.progress.maximum():
             self.buttonwidget.setVisible(True)
+        qApp.processEvents()
 
     def close_progress(self):
         self.progress.hide()
@@ -232,14 +265,15 @@ class Tools(Enum):
 
 
 def main():
-    app = QApplication(sys.argv)
     if not sys.platform.startswith('linux'):
-        app.setStyle('Fusion')
+        QApplication.setStyle('Fusion')
+    app = QApplication(sys.argv)
+    app.setApplicationName(baidugrabber.__appname__)
+    app.setApplicationVersion(baidugrabber.__version__)
+    app.setOrganizationDomain(baidugrabber.__domain__)
     baidu = BaiduDoc()
-    baidu.show()
-    app.setApplicationName('BaiduGrabber')
-    app.setApplicationVersion('1.0')
     app.aboutToQuit.connect(baidu.cleanup)
+    baidu.show()
     sys.exit(app.exec_())
 
 

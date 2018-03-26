@@ -105,7 +105,4 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-workspace/*
-!/workspace/.keep
-bin/linux/*
-!/bin/linux/.keep
+bin/
