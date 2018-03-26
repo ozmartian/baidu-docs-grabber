@@ -45,16 +45,14 @@ class BaiduDoc(QWidget):
     def __init__(self):
         super(BaiduDoc, self).__init__()
         self.workspace, self.filename = None, None
-        self.urlcount, self.swfcount, self.completecount = 0, [], 0
+        self.urlcount, self.completecount = 0, 0
         self.overlay, self.progress, self.progresslabel = None, None, None
         self.outdir = QDir(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
-        self.buttonwidget = QWidget(self)
-        self.buttonwidget.setVisible(False)
         self.openbutton, self.continuebutton = None, None
         self.procs = Munch(download=[], render=[], convert=[])
         self.work_folders = []
         self.setWindowTitle('Baidu Docs Grabber')
-        self.setWindowIcon(QIcon(self.get_path(':images/icon.png')))
+        qApp.setWindowIcon(QIcon(':images/icon.png'))
         self.input_links = QTextEdit(self)
         self.input_links.setStyleSheet('''QTextEdit {
             background: #FFF url(:images/watermark.png) no-repeat center center;
@@ -79,11 +77,16 @@ class BaiduDoc(QWidget):
         bottomlayout.addWidget(logolabel)
         bottomlayout.addStretch(1)
         bottomlayout.addWidget(self.input_buttons)
-        layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 8)
-        layout.addWidget(self.input_links)
-        layout.addLayout(bottomlayout)
-        self.setLayout(layout)
+        mainlayout = QVBoxLayout()
+        mainlayout.setContentsMargins(10, 10, 10, 8)
+        mainlayout.addWidget(self.input_links)
+        mainlayout.addLayout(bottomlayout)
+        mainwidget = QWidget(self)
+        mainwidget.setLayout(mainlayout)
+        self.stackedlayout = QStackedLayout()
+        self.stackedlayout.setStackingMode(QStackedLayout.StackAll)
+        self.stackedlayout.addWidget(mainwidget)
+        self.setLayout(self.stackedlayout)
         self.setMinimumSize(600, 400)
         # FOR TESTING
         self.outdir = QDir('C:/Temp/_DOCS' if sys.platform == 'win32' else '/home/ozmartian/Temp/_docs')
@@ -129,31 +132,34 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             self.completecount += 1
             self.sender().close()
             if self.completecount == self.urlcount:
+                self.completecount == 0
                 self.render_pngs()
 
     def render_pngs(self):
         self.update_progress('Converting pages to PNG images...', 2)
         for folder in self.work_folders:
-            swfs = QDir(folder).entryList(['*.swf'])
-            self.swfcount.append({'folder': folder, 'total': len(swfs), 'complete': 0})
-            for swf in swfs:
-                cmd = '{0} -r 240 {1} -o {2}'.format(Tools.RENDER.value, swf, swf.replace('.swf', '.png'))
-                self.procs.render.append(self.init_proc(cmd, folder, self.convert))
+            if sys.platform == 'win32':
+                cmd = 'for /r %v in (*.swf) do {} -r 240 "%v" -o "%v.png"'.format(Tools.RENDER.value)
+            else:
+                cmd = 'ls *.swf | xargs -I{{}} {} -r 240 "{{}}" -o "{{}}.png"'.format(Tools.RENDER.value)
+            self.procs.render.append(self.init_proc(cmd, folder, self.convert))
+
+    @pyqtSlot(int, QProcess.ExitStatus)
+    def monitor_render(self, code: int, status: QProcess.ExitStatus):
+        if code == 0 and status == QProcess.NormalExit:
+            self.completecount += 1
+            self.sender().close()
+            if self.completecount == len(self.work_folders):
+                self.completecount = 0
+                self.convert()
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def convert(self, code: int, status: QProcess.ExitStatus):
-        if code == 0 and status == QProcess.NormalExit:
-            folderswfs = [x for x in self.swfcount if x['folder'] == self.sender().workingDirectory()][0]
-            folderswfs['complete'] += 1
-            completed = [x for x in self.swfcount if x['complete'] == x['total']]
-            self.sender().close()
-            if len(completed) == len(self.swfcount):
-                self.update_progress('Merging pages into PDF documents...', 3)
-                self.completecount = 0
-                for folder in self.work_folders:
-                    filename = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
-                    cmd = '{0} -adjoin {1} {2}'.format(Tools.CONVERT.value, '{}/*.png'.format(folder), filename)
-                    self.procs.convert.append(self.init_proc(cmd, folder, self.complete))
+        self.update_progress('Merging pages into PDF documents...', 3)
+        for folder in self.work_folders:
+            filename = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
+            cmd = '{0} -adjoin *.png {1}'.format(Tools.CONVERT.value, filename)
+            self.procs.convert.append(self.init_proc(cmd, folder, self.complete))
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def complete(self, code: int, status: QProcess.ExitStatus):
@@ -161,21 +167,18 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             self.completecount += 1
             self.sender().close()
             if self.completecount == len(self.work_folders):
-                self.update_progress('Processing complete...', 4)
-                self.buttonwidget.setVisible(True)
+                self.update_progress('Complete... Your documents are ready!', 4)
                 self.cleanup()
 
     def show_progress(self, msg: str):
-        if self.overlay is not None:
-            sip.delete(self.overlay)
-            del self.overlay
-        self.overlay = QDialog(self, Qt.Popup)
         self.progress = QProgressBar(self)
         self.progress.setStyle(QStyleFactory.create('Fusion'))
+        self.progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.progress.setTextVisible(True)
         self.progress.setRange(0, 4)
         self.progress.setValue(1)
         self.progresslabel = QLabel(msg, self)
+        self.progresslabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.progresslabel.setAlignment(Qt.AlignHCenter)
         self.progresslabel.setStyleSheet('''
         QLabel {
@@ -183,42 +186,43 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             font-size: 11pt;
             text-align: center;
         }''')
-        self.openbutton = QPushButton('Open Folder', self)
-        self.openbutton.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.outdir.absolutePath())))
-        self.continuebutton = QPushButton('Continue', self)
-        self.continuebutton.clicked.connect(self.close_progress)
-        buttonlayout = QHBoxLayout()
-        buttonlayout.addStretch(1)
-        buttonlayout.addWidget(self.openbutton)
-        buttonlayout.addWidget(self.continuebutton)
-        buttonlayout.addStretch(1)
-        self.buttonwidget.setLayout(buttonlayout)
-        self.buttonwidget.setVisible(False)
         layout = QVBoxLayout()
+        layout.setContentsMargins(20, 10, 20, 10)
         layout.addStretch(1)
         layout.addWidget(self.progresslabel)
         layout.addWidget(self.progress)
-        layout.addWidget(self.buttonwidget)
         layout.addStretch(1)
+        self.overlay = QWidget(self, Qt.Popup)
         self.overlay.setGeometry(self.geometry())
         self.overlay.setStyleSheet('background-color: #FFF;')
-        self.overlay.setWindowOpacity(0.75)
+        self.overlay.setWindowOpacity(0.6)
         self.overlay.setLayout(layout)
-        self.overlay.show()
+        self.stackedlayout.addWidget(self.overlay)
 
     def update_progress(self, msg: str, step: int):
         self.progress.setValue(step)
         self.progresslabel.setText(msg)
         if self.progress.value() == self.progress.maximum():
-            self.buttonwidget.setVisible(True)
+            self.openbutton = QPushButton('Open Folder', self)
+            self.openbutton.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.outdir.absolutePath())))
+            self.continuebutton = QPushButton('Continue', self)
+            self.continuebutton.clicked.connect(self.close_progress)
+            buttonlayout = QHBoxLayout()
+            buttonlayout.addStretch(1)
+            buttonlayout.addWidget(self.openbutton)
+            buttonlayout.addWidget(self.continuebutton)
+            buttonlayout.addStretch(1)
+            self.overlay.layout().insertLayout(self.overlay.layout().count() - 1, buttonlayout)
         qApp.processEvents()
 
     def close_progress(self):
-        self.progress.hide()
         self.overlay.hide()
-        self.progress = None
-        self.overlay.deleteLater()
+        item = self.stackedlayout.takeAt(self.stackedlayout.count() - 1)
+        sip.delete(self.overlay)
+        del self.overlay
+        sip.delete(item)
+        del item
 
     def handle_error(self, title: str, msg: str):
         QMessageBox.critical(self, title, msg, QMessageBox.Ok)
@@ -229,7 +233,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             # noinspection PyProtectedMember, PyUnresolvedReferences
             prepath = sys._MEIPASS
         else:
-            prepath = os.path.dirname(os.path.realpath(sys.argv[0]))
+            prepath = QDir.currentPath()
         if path is not None:
             return os.path.join(prepath, path)
         else:
