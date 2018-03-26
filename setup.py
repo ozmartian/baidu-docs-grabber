@@ -22,11 +22,9 @@
 #
 #######################################################################
 
-import os
 from setuptools import setup
 
 import baidugrabber
-
 
 setup(name=baidugrabber.__appname__,
       version=baidugrabber.__version__,

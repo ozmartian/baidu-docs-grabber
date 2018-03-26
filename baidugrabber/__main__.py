@@ -33,9 +33,10 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-import baidugrabber
+# noinspection PyUnresolvedReferences
 from baidugrabber import resources
 from baidugrabber.munch import Munch
+import baidugrabber
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 signal.signal(signal.SIGTERM, signal.SIG_DFL)
@@ -275,6 +276,7 @@ def main():
     app.setApplicationName(baidugrabber.__appname__)
     app.setApplicationVersion(baidugrabber.__version__)
     app.setOrganizationDomain(baidugrabber.__domain__)
+    app.setQuitOnLastWindowClosed(True)
     baidu = BaiduDoc()
     app.aboutToQuit.connect(baidu.cleanup)
     baidu.show()
