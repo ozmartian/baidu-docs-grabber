@@ -108,3 +108,9 @@ bin/
 _build/InnoSetup/Output/
 
 !/bin/linux/swfrender
+!/bin/win32/img2pdf.exe
+!/bin/win32/
+!/bin/win32/swfrender.exe
+!/bin/win32/convert.exe
+!/bin/win32/.keep
+!/bin/win32/dl-baidu-swf.exe

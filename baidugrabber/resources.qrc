@@ -3,6 +3,7 @@
         <file>images/icon.png</file>
         <file>images/logo.png</file>
         <file>images/overlay.png</file>
+        <file>images/spinner.gif</file>
         <file>images/watermark.png</file>
     </qresource>
 </RCC>

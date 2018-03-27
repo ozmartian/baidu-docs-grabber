@@ -1,3 +1,4 @@
 #!/bin/bash
 
 ls *.swf | xargs -I{} $(which swfrender) -r 240 "{}" -o "{}.png"
+ls *.png | xargs -I{} $(which convert) "{}" -o "{}.jpg"

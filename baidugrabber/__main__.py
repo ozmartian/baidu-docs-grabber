@@ -27,7 +27,6 @@ import shutil
 import signal
 import sip
 import sys
-from enum import Enum
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -42,6 +41,12 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 
+#   LINKS FOR TESTING:
+#
+#   https://wenku.baidu.com/view/7d31c296dd88d0d233d46ad8.html?sxts=1521450475781
+#   https://wenku.baidu.com/view/44a0c50aba1aa8114431d979.html?from=search
+#   https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
+
 class BaiduDoc(QWidget):
     def __init__(self, parent=None):
         super(BaiduDoc, self).__init__(parent)
@@ -51,7 +56,7 @@ class BaiduDoc(QWidget):
         self.outdir = QDir(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
         self.openbutton, self.continuebutton = None, None
         self.procs = Munch(download=[], render=[], convert=[], merge=[])
-        self.work_folders = []
+        self.work_folders, self.pdfs = [], []
         self.setWindowTitle('Baidu Docs Grabber')
         qApp.setWindowIcon(QIcon(':images/icon.png'))
         self.input_links = QTextEdit(self)
@@ -89,11 +94,6 @@ class BaiduDoc(QWidget):
         self.stackedlayout.addWidget(mainwidget)
         self.setLayout(self.stackedlayout)
         self.setMinimumSize(600, 400)
-        # FOR TESTING
-        self.outdir = QDir('C:/Temp/_DOCS' if sys.platform == 'win32' else '/home/ozmartian/Temp/_docs')
-        self.input_links.setText('''https://wenku.baidu.com/view/7d31c296dd88d0d233d46ad8.html?sxts=1521450475781
-https://wenku.baidu.com/view/44a0c50aba1aa8114431d979.html?from=search
-https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
 
     @pyqtSlot(QAbstractButton)
     def handle_actions(self, button: QAbstractButton):
@@ -124,7 +124,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                 if swf_link.isValid():
                     self.work_folders.append(os.path.join(self.outdir.absolutePath(), '{0:03}'.format(index + 1)))
                     os.makedirs(self.work_folders[index], exist_ok=True)
-                    cmd = '{0} {1}'.format(Tools.DOWNLOAD.value, url)
+                    cmd = '{0} {1}'.format(Tools.DOWNLOAD, url)
                     self.procs.download.append(self.run_cmd(cmd, self.work_folders[index], self.monitor_downloads))
 
     @pyqtSlot(int, QProcess.ExitStatus)
@@ -143,10 +143,11 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.update_progress('Rendering pages to image files...', 2)
         for folder in self.work_folders:
             if sys.platform == 'win32':
-                cmd = 'for /r %v in (*.swf) do {} -r 240 "%v" -o "%v.png"'.format(Tools.RENDER.value)
+                cmd = 'cmd /c "for %f in (*.swf) do ( {} -r 240 \"%f\" -o \"%~nf.png\" && '.format(Tools.RENDER)
+                cmd += '{} -quiet \"%~nf.png\" \"%~nf.jpg\" )"'.format(Tools.CONVERT)
             else:
-                cmd = Tools.RENDER.value
-            self.procs.render.append(self.run_cmd(cmd, folder, self.convert))
+                cmd = Tools.RENDER
+            self.procs.render.append(self.run_cmd(cmd, folder, self.monitor_render))
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def monitor_render(self, code: int, status: QProcess.ExitStatus):
@@ -158,35 +159,36 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                     completed += 1
             if completed == len(self.procs.render):
                 self.procs.render.clear()
-                self.convert()
-
-    def convert(self):
-        self.update_progress('Converting images to JPG format...', 3)
-        for folder in self.work_folders:
-            if sys.platform == 'win32':
-                cmd = 'for /r %v in (*.png) do {} "%v" "%v.jpg"'.format(Tools.CONVERT.value)
-            else:
-                cmd = Tools.CONVERT.value
-            self.procs.convert.append(self.run_cmd(cmd, folder, self.complete))
-
-    @pyqtSlot(int, QProcess.ExitStatus)
-    def monitor_convert(self, code: int, status: QProcess.ExitStatus):
-        if code == 0 and status == QProcess.NormalExit:
-            completed = 0
-            for proc in self.procs.convert:
-                if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
-                    proc.close()
-                    completed += 1
-            if completed == len(self.procs.convert):
-                self.procs.convert.clear()
+                # self.convert()
                 self.merge()
 
+    # def convert(self):
+    #     self.update_progress('Converting images to JPG format...', 3)
+    #     for folder in self.work_folders:
+    #         if sys.platform == 'win32':
+    #             cmd = 'cmd /c "for %d in (*.png) do {} \"%f\" \"%~nf.jpg\""'.format(Tools.CONVERT)
+    #         else:
+    #             cmd = Tools.CONVERT
+    #         self.procs.convert.append(self.run_cmd(cmd, folder, self.complete))
+    #
+    # @pyqtSlot(int, QProcess.ExitStatus)
+    # def monitor_convert(self, code: int, status: QProcess.ExitStatus):
+    #     if code == 0 and status == QProcess.NormalExit:
+    #         completed = 0
+    #         for proc in self.procs.convert:
+    #             if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
+    #                 proc.close()
+    #                 completed += 1
+    #         if completed == len(self.procs.convert):
+    #             self.procs.convert.clear()
+    #             self.merge()
+
     def merge(self):
-        self.update_progress('Merging images into PDF documents...', 4)
+        self.update_progress('Creating PDF documents...', 3)
         for folder in self.work_folders:
-            filename = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
+            self.pdfs.append(os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName())))
             jpgs = ' '.join(QDir(folder).entryList(['*.jpg']))
-            cmd = '{0} -o {1} {2}'.format(Tools.MERGE.value, filename, jpgs)
+            cmd = '{0} -o {1} {2}'.format(Tools.MERGE, self.pdfs[self.work_folders.index(folder)], jpgs)
             self.procs.merge.append(self.run_cmd(cmd, folder, self.complete))
 
     @pyqtSlot(int, QProcess.ExitStatus)
@@ -198,7 +200,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
                     proc.close()
                     completed += 1
             if completed == len(self.procs.merge):
-                self.update_progress('Complete... Your documents are ready!', 5)
+                self.update_progress('COMPLETE! Your documents are ready...', 4)
                 self.procs.merge.clear()
                 self.cleanup()
 
@@ -207,7 +209,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.progress.setStyle(QStyleFactory.create('Fusion'))
         self.progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.progress.setTextVisible(True)
-        self.progress.setRange(0, 5)
+        self.progress.setRange(0, 4)
         self.progress.setValue(1)
         self.progresslabel = QLabel(msg, self)
         self.progresslabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
@@ -220,7 +222,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             color: #000;
         }''')
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setContentsMargins(50, 10, 50, 10)
         layout.addStretch(1)
         layout.addWidget(self.progresslabel)
         layout.addWidget(self.progress)
@@ -246,6 +248,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
             buttonlayout.addWidget(self.openbutton)
             buttonlayout.addWidget(self.continuebutton)
             buttonlayout.addStretch(1)
+            self.overlay.layout().insertSpacing(self.overlay.layout().count() - 1, 15)
             self.overlay.layout().insertLayout(self.overlay.layout().count() - 1, buttonlayout)
         qApp.processEvents()
 
@@ -272,7 +275,7 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         else:
             return prepath
 
-    def run_cmd(self, cmd: str, workpath: str, finish: pyqtSlot = None):
+    def run_cmd(self, cmd: str, workpath: str, finish: pyqtSlot):
         if not os.path.exists(workpath):
             self.handle_error('Invalid work path', 'An invalid working path was passed to QProcess:\n\n{}'
                               .format(workpath))
@@ -281,14 +284,18 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         p.setProcessEnvironment(QProcessEnvironment.systemEnvironment())
         p.setProcessChannelMode(QProcess.MergedChannels)
         p.setWorkingDirectory(workpath)
-        if finish is not None:
-            p.finished.connect(finish)
+        p.finished.connect(finish)
+        p.errorOccurred.connect(self.cmd_error)
+        print('starting QProcess: {}'.format(cmd))
         p.start(cmd)
         return p
 
     @pyqtSlot()
+    def cmd_error(self):
+        self.handle_error('An error occurred', self.sender().errorString())
+
+    @pyqtSlot()
     def cleanup(self):
-        # [proc.close() for proc in self.procs if type(proc) is QProcess]
         self.procs.download.clear()
         self.procs.render.clear()
         self.procs.convert.clear()
@@ -297,15 +304,15 @@ https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
         self.work_folders.clear()
 
 
-class Tools(Enum):
-    DOWNLOAD = BaiduDoc.get_path('bin/{0}/dl-baidu-swf{1}'
-                                 .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
-    RENDER = BaiduDoc.get_path('bin/{0}/swfrender{1}'
-                               .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
-    CONVERT = BaiduDoc.get_path('bin/{0}/convert{1}'
-                                .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
-    MERGE = BaiduDoc.get_path('bin/{0}/img2pdf{1}'
-                                .format(sys.platform, '.exe' if sys.platform == 'win32' else ''))
+Tools = Munch(
+    DOWNLOAD=QDir.toNativeSeparators(
+            BaiduDoc.get_path('bin/{0}/dl-baidu-swf{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))),
+    RENDER=QDir.toNativeSeparators(
+            BaiduDoc.get_path('bin/{0}/swfrender{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))),
+    CONVERT=QDir.toNativeSeparators(
+            BaiduDoc.get_path('bin/{0}/convert{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))),
+    MERGE=QDir.toNativeSeparators(
+            BaiduDoc.get_path('bin/{0}/img2pdf{1}'.format(sys.platform, '.exe' if sys.platform == 'win32' else ''))))
 
 
 def main():
