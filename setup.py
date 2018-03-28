@@ -22,9 +22,21 @@
 #
 #######################################################################
 
+import os
+import sys
 from setuptools import setup
 
 import baidugrabber
+
+
+def get_deps():
+    pyqt5_exists = False
+    for syspath in sys.path:
+        pyqt5_exists = os.path.exists(os.path.join(syspath, 'PyQt5'))
+        if pyqt5_exists:
+            break
+    return ['PyQt5' if not pyqt5_exists else '']
+
 
 setup(name=baidugrabber.__appname__,
       version=baidugrabber.__version__,
@@ -37,6 +49,7 @@ setup(name=baidugrabber.__appname__,
       license='GPLv3+',
       packages=['baidugrabber'],
       setup_requires=['setuptools'],
+      install_requires=get_deps(),
       package_data={'baidugrabber': ['README.md', 'LICENSE']},
       entry_points={'gui_scripts': ['baidu-grabber = baidugrabber.__main__:main']},
       keywords='baidu-grabber baidu-docs baidu docs pdf',
