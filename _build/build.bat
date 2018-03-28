@@ -13,7 +13,7 @@ if [%1]==[] (
 SET ARCH=64
 SET BINARCH=x64
 SET PYPATH=C:\Python36-x64
-SET APPVER=1.0.0
+SET APPVER=1.0.5
 
 REM ......................cleanup previous build scraps......................
 
@@ -36,7 +36,7 @@ if exist "dist\baidu-grabber.exe" (
     call "C:\Program Files (x86)\Inno Setup 5\iscc.exe" installer.iss
 
     REM ................sign final redistributable EXE with self-signed certificate..........
-    SignTool.exe sign /f ..\codesign.pfx /t http://timestamp.comodoca.com/authenticode /p %PASS% output\BaiduGrabber-Setup.exe
+    SignTool.exe sign /f ..\codesign.pfx /t http://timestamp.comodoca.com/authenticode /p %PASS% output\BaiduGrabber-%APPVER%-setup-win64.exe
 )
 
 goto :eof
