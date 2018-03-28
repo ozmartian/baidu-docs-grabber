@@ -57,6 +57,8 @@ class BaiduDoc(QWidget):
         self.openbutton, self.continuebutton = None, None
         self.procs = Munch(download=[], render=[], convert=[], merge=[])
         self.work_folders, self.pdfs = [], []
+        self.watcher = QFileSystemWatcher(self)
+        self.watcher.directoryChanged.connect(self.render_progress)
         self.setWindowTitle('Baidu Docs Grabber')   
         qApp.setWindowIcon(QIcon(':images/icon.png'))
         self.input_links = QTextEdit(self)
@@ -148,11 +150,9 @@ class BaiduDoc(QWidget):
     def render_pngs(self):
         self.update_progress('Rendering pages to image files...', 2)
         self.rendercount, self.totalcount = 0, 0
-        watcher = QFileSystemWatcher(self)
-        watcher.directoryChanged.connect(self.render_progress)
         for folder in self.work_folders:
             self.totalcount += len(QDir(folder).entryList(['*.swf']))
-            watcher.addPath(folder)
+            self.watcher.addPath(folder)
             if sys.platform == 'win32':
                 cmd = 'cmd /c "for %f in (*.swf) do ( {} -r 240 \"%f\" -o \"%~nf.png\" && '.format(Tools.RENDER)
                 cmd += '{} -quiet \"%~nf.png\" \"%~nf.jpg\" )"'.format(Tools.CONVERT)
@@ -176,6 +176,7 @@ class BaiduDoc(QWidget):
     def monitor_render(self, code: int, status: QProcess.ExitStatus):
         if code == 0 and status == QProcess.NormalExit:
             completed = 0
+            self.watcher.removePath(self.sender().workingDirectory())
             for proc in self.procs.render:
                 if type(proc) is QProcess and proc.state() == QProcess.NotRunning:
                     proc.close()
