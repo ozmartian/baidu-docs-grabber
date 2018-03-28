@@ -22,11 +22,11 @@
 #
 #######################################################################
 
-__version__ = '1.0.0'
+__version__ = '1.0.5'
 
 __appname__ = 'BaiduGrabber'
 __domain__ = 'ozmartians.com'
 
 __author__ = 'Pete Alexandrou'
 __email__ = 'pete@ozmartians.com'
-__website__ = 'https://github.com/ozmartians/baidu-grabber'
+__website__ = 'https://github.com/ozmartian/baidu-docs-grabber'
