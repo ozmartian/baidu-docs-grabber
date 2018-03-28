@@ -36,7 +36,7 @@ if exist "dist\baidu-grabber.exe" (
     call "C:\Program Files (x86)\Inno Setup 5\iscc.exe" installer.iss
 
     REM ................sign final redistributable EXE with self-signed certificate..........
-    SignTool.exe sign /f ..\codesign.pfx /t http://timestamp.comodoca.com/authenticode /p %PASS% output\BaiduGrabber-%APPVER%-setup-win64.exe
+    SignTool.exe sign /f ..\codesign.pfx /t http://timestamp.comodoca.com/authenticode /p %PASS% output\BaiduGrabber-%APPVER%-setup-win%ARCH%.exe
 )
 
 goto :eof
