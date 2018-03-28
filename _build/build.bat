@@ -13,7 +13,7 @@ if [%1]==[] (
 SET ARCH=64
 SET BINARCH=x64
 SET PYPATH=C:\Python36-x64
-SET APPVER=1.0.5
+SET APPVER=1.1.0
 
 REM ......................cleanup previous build scraps......................
 

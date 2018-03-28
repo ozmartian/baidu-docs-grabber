@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #ifndef AppVersion
-    #define AppVersion "1.0.5.0"
+    #define AppVersion "1.1.0.0"
 #endif
 
 [Setup]
@@ -17,7 +17,7 @@ AppPublisher=Pete Alexandrou
 AppPublisherURL=https://github.com/ozmartians/baidu-grabber
 DefaultDirName={pf}\BaiduGrabber
 DefaultGroupName=BaiduGrabber
-OutputBaseFilename=BaiduGrabber-1.0.5-setup-win64
+OutputBaseFilename=BaiduGrabber-1.1.0-setup-win64
 SetupIconFile=..\icons\baidu-grabber.ico
 UninstallDisplayIcon={app}\baidu-grabber.exe
 Compression=lzma2
