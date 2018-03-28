@@ -164,8 +164,12 @@ class BaiduDoc(QWidget):
     def render_progress(self, folder: str):
         if os.path.exists(folder):
             self.rendercount += 1
-            self.update_progress('Rendering pages to image files... [{0:02d}/{1:02d}]'
-                                 .format(self.rendercount, self.totalcount), 2)
+            if sys.platform == 'win32' and not self.rendercount & 1:
+                self.update_progress('Rendering pages to image files... [{0:02d}/{1:02d}]'
+                                     .format(self.rendercount / 2, self.totalcount), 2)
+            else:
+                self.update_progress('Rendering pages to image files... [{0:02d}/{1:02d}]'
+                                     .format(self.rendercount, self.totalcount), 2)
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def monitor_render(self, code: int, status: QProcess.ExitStatus):
