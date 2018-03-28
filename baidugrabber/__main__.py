@@ -43,9 +43,9 @@ signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 #   LINKS FOR TESTING:
 #
-#   https://wenku.baidu.com/view/7d31c296dd88d0d233d46ad8.html?sxts=1521450475781
-#   https://wenku.baidu.com/view/44a0c50aba1aa8114431d979.html?from=search
-#   https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html?from=search''')
+#   https://wenku.baidu.com/view/44a0c50aba1aa8114431d979.html
+#   https://wenku.baidu.com/view/7d31c296dd88d0d233d46ad8.html
+#   https://wenku.baidu.com/view/5c4aa3716c85ec3a87c2c5f2.html
 
 class BaiduDoc(QWidget):
     def __init__(self, parent=None):
@@ -57,7 +57,7 @@ class BaiduDoc(QWidget):
         self.openbutton, self.continuebutton = None, None
         self.procs = Munch(download=[], render=[], convert=[], merge=[])
         self.work_folders, self.pdfs = [], []
-        self.setWindowTitle('Baidu Docs Grabber')
+        self.setWindowTitle('Baidu Docs Grabber')   
         qApp.setWindowIcon(QIcon(':images/icon.png'))
         self.input_links = QTextEdit(self)
         self.input_links.setStyleSheet('''QTextEdit {
@@ -75,9 +75,15 @@ class BaiduDoc(QWidget):
         self.input_links.setTextInteractionFlags(Qt.TextEditorInteraction)
         self.input_links.ensureCursorVisible()
         self.input_links.setAutoFormatting(QTextEdit.AutoNone)
-        self.input_buttons = QDialogButtonBox(QDialogButtonBox.SaveAll | QDialogButtonBox.Reset, self)
+        clear_button = QPushButton('Clear', self)
+        start_button = QPushButton('Start', self)
+        start_button.setDefault(True)
+        self.input_buttons = QDialogButtonBox(self)
+        self.input_buttons.addButton(clear_button, QDialogButtonBox.ResetRole)
+        self.input_buttons.addButton(start_button, QDialogButtonBox.AcceptRole)
         self.input_buttons.clicked.connect(self.handle_actions)
-        logolabel = QLabel('<img src=":images/logo.png" />', self)
+        logolabel = QLabel(self)
+        logolabel.setPixmap(QPixmap(':images/logo.png'))
         bottomlayout = QHBoxLayout()
         bottomlayout.setContentsMargins(0, 0, 0, 0)
         bottomlayout.addWidget(logolabel)
@@ -141,13 +147,25 @@ class BaiduDoc(QWidget):
 
     def render_pngs(self):
         self.update_progress('Rendering pages to image files...', 2)
+        self.rendercount, self.totalcount = 0, 0
+        watcher = QFileSystemWatcher(self)
+        watcher.directoryChanged.connect(self.render_progress)
         for folder in self.work_folders:
+            self.totalcount += len(QDir(folder).entryList(['*.swf']))
+            watcher.addPath(folder)
             if sys.platform == 'win32':
                 cmd = 'cmd /c "for %f in (*.swf) do ( {} -r 240 \"%f\" -o \"%~nf.png\" && '.format(Tools.RENDER)
                 cmd += '{} -quiet \"%~nf.png\" \"%~nf.jpg\" )"'.format(Tools.CONVERT)
             else:
                 cmd = Tools.RENDER
             self.procs.render.append(self.run_cmd(cmd, folder, self.monitor_render))
+
+    @pyqtSlot(str)
+    def render_progress(self, folder: str):
+        if os.path.exists(folder):
+            self.rendercount += 1
+            self.update_progress('Rendering pages to image files... [{0:02d}/{1:02d}]'
+                                 .format(self.rendercount, self.totalcount), 2)
 
     @pyqtSlot(int, QProcess.ExitStatus)
     def monitor_render(self, code: int, status: QProcess.ExitStatus):
@@ -186,9 +204,10 @@ class BaiduDoc(QWidget):
     def merge(self):
         self.update_progress('Creating PDF documents...', 3)
         for folder in self.work_folders:
-            self.pdfs.append(os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName())))
-            jpgs = ' '.join(QDir(folder).entryList(['*.jpg']))
-            cmd = '{0} -o {1} {2}'.format(Tools.MERGE, self.pdfs[self.work_folders.index(folder)], jpgs)
+            pdffile = os.path.join(self.outdir.absolutePath(), '{}.pdf'.format(QDir(folder).dirName()))
+            self.pdfs.append(pdffile)
+            jpgs = ' '.join(QDir(folder).entryList(['*.jpg' if sys.platform == 'win32' else '*.png']))
+            cmd = '{0} -o {1} {2}'.format(Tools.MERGE, pdffile, jpgs)
             self.procs.merge.append(self.run_cmd(cmd, folder, self.complete))
 
     @pyqtSlot(int, QProcess.ExitStatus)
@@ -204,27 +223,11 @@ class BaiduDoc(QWidget):
                 self.procs.merge.clear()
                 self.cleanup()
 
-    def show_progress(self, msg: str):
-        self.progress = QProgressBar(self)
-        self.progress.setStyle(QStyleFactory.create('Fusion'))
-        self.progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        self.progress.setTextVisible(True)
-        self.progress.setRange(0, 4)
-        self.progress.setValue(1)
-        self.progresslabel = QLabel(msg, self)
-        self.progresslabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        self.progresslabel.setAlignment(Qt.AlignHCenter)
-        self.progresslabel.setStyleSheet('''
-        QLabel {
-            font-weight: bold;
-            font-size: 11pt;
-            text-align: center;
-            color: #000;
-        }''')
+    def show_progress(self, msg: str, steps: int=4):
+        self.progress = BaiduProgressBar(msg, steps, self)
         layout = QVBoxLayout()
         layout.setContentsMargins(50, 10, 50, 10)
         layout.addStretch(1)
-        layout.addWidget(self.progresslabel)
         layout.addWidget(self.progress)
         layout.addStretch(1)
         self.overlay = QWidget(self)
@@ -235,9 +238,8 @@ class BaiduDoc(QWidget):
         self.stackedlayout.setCurrentWidget(self.overlay)
 
     def update_progress(self, msg: str, step: int):
-        self.progress.setValue(step)
-        self.progresslabel.setText(msg)
-        if self.progress.value() == self.progress.maximum():
+        self.progress.update(step, msg)
+        if self.progress.value == self.progress.maximum:
             self.openbutton = QPushButton('Open Folder', self)
             self.openbutton.clicked.connect(
                 lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.outdir.absolutePath())))
@@ -250,7 +252,6 @@ class BaiduDoc(QWidget):
             buttonlayout.addStretch(1)
             self.overlay.layout().insertSpacing(self.overlay.layout().count() - 1, 15)
             self.overlay.layout().insertLayout(self.overlay.layout().count() - 1, buttonlayout)
-        qApp.processEvents()
 
     def close_progress(self):
         self.overlay.hide()
@@ -302,6 +303,50 @@ class BaiduDoc(QWidget):
         self.procs.merge.clear()
         [shutil.rmtree(folder) for folder in self.work_folders]
         self.work_folders.clear()
+
+
+class BaiduProgressBar(QWidget):
+    def __init__(self, msg: str, steps: int, parent=None):
+        super(BaiduProgressBar, self).__init__(parent)
+        self.parent = parent
+        self.setStyle(QStyleFactory.create('Fusion'))
+        self.progresslabel = QLabel(msg, self)
+        self.progresslabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.progresslabel.setAlignment(Qt.AlignHCenter)
+        self.progresslabel.setStyleSheet('''
+            QLabel {
+                font-weight: bold;
+                font-size: 11pt;
+                text-align: center;
+                color: #000;
+            }
+        ''')
+        self.progresslabel.setText(msg)
+        self.progressbar = QProgressBar(self)
+        self.progressbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        # palette = self.progressbar.palette()
+        # palette.setColor(QPalette.Highlight, QColor(100, 44, 104))
+        # self.progressbar.setPalette(palette)
+        self.progressbar.setTextVisible(True)
+        self.progressbar.setRange(0, steps)
+        self.progressbar.setValue(1)
+        layout = QVBoxLayout()
+        layout.addWidget(self.progresslabel)
+        layout.addWidget(self.progressbar)
+        self.setLayout(layout)
+
+    def update(self, value: int, msg: str):
+        self.progressbar.setValue(value)
+        self.progresslabel.setText(msg)
+        qApp.processEvents()
+
+    @property
+    def value(self):
+        return self.progressbar.value()
+
+    @property
+    def maximum(self):
+        return self.progressbar.maximum()
 
 
 Tools = Munch(
