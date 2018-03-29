@@ -57,6 +57,7 @@ class BaiduDoc(QWidget):
         self.openbutton, self.continuebutton = None, None
         self.procs = Munch(download=[], render=[], convert=[], merge=[])
         self.work_folders, self.pdfs = [], []
+        self.spinnerlabel = None
         self.watcher = QFileSystemWatcher(self)
         self.watcher.directoryChanged.connect(self.render_progress)
         self.setWindowTitle('Baidu Docs Grabber')   
@@ -236,10 +237,18 @@ class BaiduDoc(QWidget):
         layout.addStretch(1)
         layout.addWidget(self.progress)
         layout.addStretch(1)
+        self.spinnerlabel = QLabel(self)
+        self.spinnerlabel.setAlignment(Qt.AlignCenter)
+        self.spinnerlabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spinnermovie = QMovie(':images/spinner.gif', b'GIF', self)
+        spinnermovie.frameChanged.connect(lambda: self.spinnerlabel.setPixmap(spinnermovie.currentPixmap()))
+        spinnermovie.start()
         self.overlay = QWidget(self)
         self.overlay.setObjectName('ov')
         self.overlay.setStyleSheet('QWidget#ov { border-image: url(:images/overlay.png) 0 0 0 0 stretch stretch; }')
         self.overlay.setLayout(layout)
+        self.stackedlayout.addWidget(self.spinnerlabel)
+        self.stackedlayout.setCurrentWidget(self.spinnerlabel)
         self.stackedlayout.addWidget(self.overlay)
         self.stackedlayout.setCurrentWidget(self.overlay)
 
@@ -251,6 +260,9 @@ class BaiduDoc(QWidget):
                 lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.outdir.absolutePath())))
             self.continuebutton = QPushButton('Continue', self)
             self.continuebutton.clicked.connect(self.close_progress)
+            item = self.stackedlayout.takeAt(self.stackedlayout.count() - 2)
+            sip.delete(item)
+            del item
             buttonlayout = QHBoxLayout()
             buttonlayout.addStretch(1)
             buttonlayout.addWidget(self.openbutton)
@@ -303,10 +315,10 @@ class BaiduDoc(QWidget):
 
     @pyqtSlot()
     def cleanup(self):
-        self.procs.download.clear()
-        self.procs.render.clear()
-        self.procs.convert.clear()
-        self.procs.merge.clear()
+        for proctype in {'download', 'render', 'convert', 'merge'}:
+            proclist = self.procs[proctype]
+            [p.kill() for p in proclist if type(p) is QProcess]
+            proclist.clear()
         [shutil.rmtree(folder) for folder in self.work_folders]
         self.work_folders.clear()
 
